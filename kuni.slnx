@@ -1,0 +1,8 @@
+<Solution>
+  <Configurations>
+    <Platform Name="ARM64" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="kuni.vcxproj" Id="bbc4be77-293a-421b-a0c2-338979a91c42" />
+</Solution>
