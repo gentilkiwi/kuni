@@ -145,17 +145,17 @@ BOOL KUNI_FW_WaitForSingleReceiveSignal(HID_HANDLES* pHandles, BYTE Target, DWOR
 	return ret;
 }
 
-BOOL KUNI_FW_SendRecv(HID_HANDLES* pHandles, PKUNI_CO_HANDLE pMedia, BYTE ToRecvType, DWORD Timeout) {
+BOOL KUNI_FW_SendRecv(HID_HANDLES* pHandles, PKUNI_CO_HANDLE pMedia, BYTE ToRecvType, DWORD Timeout, PKUNI_FW_MESSAGE* ppErrorMessage) {
 	BOOL ret = FALSE;
 
 	pMedia->Output.Buffer[0] = pMedia->Output.Id;
 	KUNI_FW_ResetReceiveSignals(pHandles, pMedia->Output.Buffer, ToRecvType);
+
 	if (KUNI_CO_SendOutput(pMedia, Timeout)) {
-		if (KUNI_FW_WaitForSingleReceiveSignal(pHandles, ToRecvType, Timeout, NULL)) {
-			KUNI_FW_ResetReceiveSignals(pHandles, NULL, ToRecvType);
-			ret = TRUE;
-		}
+		ret = KUNI_FW_WaitForSingleReceiveSignal(pHandles, ToRecvType, Timeout, ppErrorMessage);
 	}
+
+	KUNI_FW_ResetReceiveSignals(pHandles, NULL, ToRecvType);
 
 	return ret;
 }
@@ -169,28 +169,8 @@ BOOL KUNI_FW_SetRegister(HID_HANDLES* pHandles, BYTE DeviceIndex, BYTE Register,
 	pHandle->Output.Buffer[3] = Register;
 	RtlCopyMemory(pHandle->Output.Buffer + 4, Value, 3);
 
-	if (KUNI_FW_SendRecv(pHandles, pHandle, REPORT_ID_HIDPP_SHORT, Timeout))
+	if (KUNI_FW_SendRecv(pHandles, pHandle, REPORT_ID_HIDPP_SHORT, Timeout, NULL))
 	{
-		ret = TRUE;
-	}
-
-	return ret;
-}
-
-BOOL KUNI_FW_GetRegister(HID_HANDLES* pHandles, BYTE DeviceIndex, BYTE Register, BYTE Parameters[3], BYTE Value[3], DWORD Timeout) {
-	BOOL ret = FALSE;
-	PKUNI_CO_HANDLE pHandle = &pHandles->Short;
-
-	pHandle->Output.Buffer[1] = DeviceIndex;
-	pHandle->Output.Buffer[2] = HIDPP_MSG_ID_GET_REGISTER;
-	pHandle->Output.Buffer[3] = Register;
-	RtlCopyMemory(pHandle->Output.Buffer + 4, Parameters, 3);
-
-	if (KUNI_FW_SendRecv(pHandles, pHandle, REPORT_ID_HIDPP_SHORT, Timeout)) {
-		if (Value) {
-			RtlCopyMemory(Value, ((PKUNI_FW_MESSAGE) pHandles->Short.Input.Buffer)->Parameters, 3);
-		}
-
 		ret = TRUE;
 	}
 
@@ -206,14 +186,34 @@ BOOL KUNI_FW_SetLongRegister(HID_HANDLES* pHandles, BYTE DeviceIndex, BYTE Regis
 	pHandle->Output.Buffer[3] = Register;
 	RtlCopyMemory(pHandle->Output.Buffer + 4, Value, 16);
 
-	if (KUNI_FW_SendRecv(pHandles, pHandle, REPORT_ID_HIDPP_SHORT, Timeout)) {
+	if (KUNI_FW_SendRecv(pHandles, pHandle, REPORT_ID_HIDPP_SHORT, Timeout, NULL)) {
 		ret = TRUE;
 	}
 
 	return ret;
 }
 
-BOOL KUNI_FW_GetLongRegister(HID_HANDLES* pHandles, BYTE DeviceIndex, BYTE Register, BYTE Parameters[3], BYTE Value[16], DWORD Timeout) {
+BOOL KUNI_FW_GetRegisterEx(HID_HANDLES* pHandles, BYTE DeviceIndex, BYTE Register, BYTE Parameters[3], BYTE Value[3], DWORD Timeout, PKUNI_FW_MESSAGE* ppErrorMessage) {
+	BOOL ret = FALSE;
+	PKUNI_CO_HANDLE pHandle = &pHandles->Short;
+
+	pHandle->Output.Buffer[1] = DeviceIndex;
+	pHandle->Output.Buffer[2] = HIDPP_MSG_ID_GET_REGISTER;
+	pHandle->Output.Buffer[3] = Register;
+	RtlCopyMemory(pHandle->Output.Buffer + 4, Parameters, 3);
+
+	if (KUNI_FW_SendRecv(pHandles, pHandle, REPORT_ID_HIDPP_SHORT, Timeout, ppErrorMessage)) {
+		if (Value) {
+			RtlCopyMemory(Value, ((PKUNI_FW_MESSAGE)pHandles->Short.Input.Buffer)->Parameters, 3);
+		}
+
+		ret = TRUE;
+	}
+
+	return ret;
+}
+
+BOOL KUNI_FW_GetLongRegisterEx(HID_HANDLES* pHandles, BYTE DeviceIndex, BYTE Register, BYTE Parameters[3], BYTE Value[16], DWORD Timeout, PKUNI_FW_MESSAGE* ppErrorMessage) {
 	BOOL ret = FALSE;
 	PKUNI_CO_HANDLE pHandle = &pHandles->Short;
 
@@ -222,13 +222,72 @@ BOOL KUNI_FW_GetLongRegister(HID_HANDLES* pHandles, BYTE DeviceIndex, BYTE Regis
 	pHandle->Output.Buffer[3] = Register;
 	RtlCopyMemory(pHandle->Output.Buffer + 4, Parameters, 3);
 
-	if (KUNI_FW_SendRecv(pHandles, pHandle, REPORT_ID_HIDPP_LONG, Timeout)) {
+	if (KUNI_FW_SendRecv(pHandles, pHandle, REPORT_ID_HIDPP_LONG, Timeout, ppErrorMessage)) {
 		if (Value) {
-			RtlCopyMemory(Value, ((PKUNI_FW_MESSAGE) pHandles->Long.Input.Buffer)->Parameters, 16);
+			RtlCopyMemory(Value, ((PKUNI_FW_MESSAGE)pHandles->Long.Input.Buffer)->Parameters, 16);
 		}
 
 		ret = TRUE;
 	}
 
 	return ret;
+}
+
+BOOL KUNI_FW_ReadPairing(HID_HANDLES* pHandles, BYTE SubId, BYTE Value[16], PKUNI_FW_MESSAGE* ppError) {
+	return KUNI_FW_GetLongRegisterEx(pHandles, DEVICE_INDEX_RECEIVER, REGISTER_PAIRING_INFORMATION, (BYTE[]) { SubId, 0x00, 0x00 }, Value, 1000, ppError) && (Value[0] == SubId);
+}
+
+void KUNI_FW_ReadDevice(HID_HANDLES* pHandles, BYTE Device, KUNI_FW_DEVICE* pDevice) {
+	PKUNI_FW_MESSAGE pError;
+
+	RtlZeroMemory(pDevice, sizeof(*pDevice));
+	pDevice->bPaired = KUNI_FW_ReadPairing(pHandles, 0x20 | Device, pDevice->Pairing, &pError);
+	if (pDevice->bPaired) {
+		pDevice->bExtended = KUNI_FW_ReadPairing(pHandles, 0x30 | Device, pDevice->Extended, &pError);
+		pDevice->bName = KUNI_FW_ReadPairing(pHandles, 0x40 | Device, pDevice->Name, &pError);
+	}
+	else {
+		pDevice->bUnreadable = !pError || (pError->Parameters[1] != HIDPP_ERR_INVALID_VALUE);
+	}
+}
+
+void KUNI_FW_PrintDevice(BYTE Device, const KUNI_FW_DEVICE* pDevice) {
+	if (!pDevice->bPaired) {
+		kprintf(L"  Device #%hhu: %s\n", Device, pDevice->bUnreadable ? L"pairing information unreadable" : L"no device paired");
+	}
+	else {
+		kprintf(L"  Device #%hhu\n", Device);
+
+		kprintf(L"    Destination Id : 0x%02hhx\n", pDevice->Pairing[1]);
+		kprintf(L"    Report Interval: 0x%02hhx (%hhu ms)\n", pDevice->Pairing[2], pDevice->Pairing[2]);
+		kprintf(L"    WPID           : 0x%02hhx%02hhx\n", pDevice->Pairing[3], pDevice->Pairing[4]);
+		kprintf(L"    unk            : ");
+		kprinthex(pDevice->Pairing + 5, 2);
+		kprintf(L"    Device Type    : 0x%02hhx\n", pDevice->Pairing[7]);
+		kprintf(L"    Capabilities   : 0x%02hhx\n", pDevice->Pairing[8]);
+		kprintf(L"    unk            : ");
+		kprinthex(pDevice->Pairing + 9, sizeof(pDevice->Pairing) - 9);
+
+		if (pDevice->bExtended) {
+			kprintf(L"    Device Serial  : ");
+			kprinthex(pDevice->Extended + 1, 4); // from Nordic CHIPID, minus last byte (??? to check, maybe in devices too !!!)
+			kprintf(L"    Report types   : 0x%08x\n", _byteswap_ulong(*(DWORD*)(pDevice->Extended + 5)));
+			kprintf(L"    Usability info : 0x%02hhx\n", pDevice->Extended[9]);
+			kprintf(L"    unk            : ");
+			kprinthex(pDevice->Extended + 10, sizeof(pDevice->Extended) - 10);
+		}
+		else kprintf(L"    Device Serial  : unreadable\n");
+
+		if (pDevice->bName) {
+			kprintf(L"    Device name    : ");
+			if (pDevice->Name[1] < 0xf) {
+				kprintf(L"%.*S\n", pDevice->Name[1], pDevice->Name + 2);
+			}
+			else {
+				kprintf(L"HEX: ");
+				kprinthex(pDevice->Name + 1, sizeof(pDevice->Name) - 1);
+			}
+		}
+		else kprintf(L"    Device name    : unreadable\n");
+	}
 }

@@ -6,12 +6,18 @@
     <ClCompile Include="utils.c" />
     <ClCompile Include="logitech_unifying_bootloader.c" />
     <ClCompile Include="logitech_unifying_hidpp_common.c" />
+    <ClCompile Include="logitech_unifying_dj.c" />
+    <ClCompile Include="logitech_unifying_spray.c" />
+    <ClCompile Include="logitech_unifying_memory.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="logitech_unifying_firmware.h" />
     <ClInclude Include="utils.h" />
     <ClInclude Include="logitech_unifying_bootloader.h" />
     <ClInclude Include="logitech_unifying_hidpp_common.h" />
+    <ClInclude Include="logitech_unifying_dj.h" />
+    <ClInclude Include="logitech_unifying_spray.h" />
+    <ClInclude Include="logitech_unifying_memory.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" />

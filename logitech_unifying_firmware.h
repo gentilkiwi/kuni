@@ -52,11 +52,6 @@
 #define REGISTER_FIRMWARE_UPDATE        0xf0
 #define REGISTER_FIRMWARE_INFO          0xf1
 
-#define REGISTER_KIWI					'k'
-
-#define KIWI_FLASH_ADDRESS_FLAG			0b00000000
-#define KIWI_INFOPAGE_ADDRESS_FLAG		0b10000000
-
 #pragma pack(push, 1)
 typedef struct _KUNI_FW_MESSAGE {
 	BYTE ReportId;
@@ -76,9 +71,11 @@ BOOL KUNI_FW_FindDevice(HID_HANDLES* pHandles);
 void KUNI_FW_CloseDevice(HID_HANDLES* pHandles);
 
 BOOL KUNI_FW_SetRegister(HID_HANDLES* pHandles, BYTE DeviceIndex, BYTE Register, BYTE Value[3], DWORD Timeout);
-BOOL KUNI_FW_GetRegister(HID_HANDLES* pHandles, BYTE DeviceIndex, BYTE Register, BYTE Parameters[3], BYTE Value[3], DWORD Timeout);
 BOOL KUNI_FW_SetLongRegister(HID_HANDLES* pHandles, BYTE DeviceIndex, BYTE Register, BYTE Value[16], DWORD Timeout);
-BOOL KUNI_FW_GetLongRegister(HID_HANDLES* pHandles, BYTE DeviceIndex, BYTE Register, BYTE Parameters[3], BYTE Value[16], DWORD Timeout);
+BOOL KUNI_FW_GetRegisterEx(HID_HANDLES* pHandles, BYTE DeviceIndex, BYTE Register, BYTE Parameters[3], BYTE Value[3], DWORD Timeout, PKUNI_FW_MESSAGE* ppErrorMessage);
+#define KUNI_FW_GetRegister(...)		KUNI_FW_GetRegisterEx(__VA_ARGS__, NULL)		// variadic: les args portent des litterals {a, b, c} dont les virgules casseraient une macro classique
+BOOL KUNI_FW_GetLongRegisterEx(HID_HANDLES* pHandles, BYTE DeviceIndex, BYTE Register, BYTE Parameters[3], BYTE Value[16], DWORD Timeout, PKUNI_FW_MESSAGE* ppErrorMessage);
+#define KUNI_FW_GetLongRegister(...)	KUNI_FW_GetLongRegisterEx(__VA_ARGS__, NULL)
 
 // ICP      - In-Circuit Programming (Bootloader)
 // LT{slot} - 
@@ -86,3 +83,29 @@ BOOL KUNI_FW_GetLongRegister(HID_HANDLES* pHandles, BYTE DeviceIndex, BYTE Regis
 // XIT      - Stop pairing
 
 #define KUNI_FW_EnterBootloader(pHandles)	KUNI_FW_SetRegister(pHandles, DEVICE_INDEX_RECEIVER, REGISTER_FIRMWARE_UPDATE, (BYTE[]) { 'I', 'C', 'P' }, 0)
+#define KUNI_FW_StopPairing(pHandles)		KUNI_FW_SetRegister(pHandles, DEVICE_INDEX_RECEIVER, REGISTER_FIRMWARE_UPDATE, (BYTE[]) { 'X', 'I', 'T' }, 1000)
+#define KUNI_FW_FreePairing(pHandles)		KUNI_FW_SetRegister(pHandles, DEVICE_INDEX_RECEIVER, REGISTER_FIRMWARE_UPDATE, (BYTE[]) { 'L', 'T', 'u' }, 1000)
+#define KUNI_FW_PairSlot(pHandles, slot)	KUNI_FW_SetRegister(pHandles, DEVICE_INDEX_RECEIVER, REGISTER_FIRMWARE_UPDATE, (BYTE[]) { 'L', 'T', (slot) }, 1000)
+
+#define KUNI_FW_EnterFactoryMode(pHandles)	KUNI_FW_SetRegister(pHandles, DEVICE_INDEX_RECEIVER, REGISTER_D0, (BYTE[]) { 0x01, 0x00, 0x00 }, 1000)
+
+#define PAIRING_INFO_CAPABILITIES		8
+#define PAIRING_CAPABILITY_ENCRYPTED	0x01
+
+/*	A paired device as the receiver stores it: the 0x20|slot pairing record, plus the
+ *	0x30|slot extended block and the 0x40|slot name when they read back. KUNI_FW_ReadDevice
+ *	fills it and KUNI_FW_PrintDevice renders it; both the info dump and the key dump use them.
+ */
+typedef struct _KUNI_FW_DEVICE {
+	BOOL bPaired;		// the 0x20|slot record exists
+	BOOL bUnreadable;	// it failed for another reason than "no such record"
+	BOOL bExtended;
+	BOOL bName;
+	BYTE Pairing[16];
+	BYTE Extended[16];
+	BYTE Name[16];
+} KUNI_FW_DEVICE, * PKUNI_FW_DEVICE;
+
+BOOL KUNI_FW_ReadPairing(HID_HANDLES* pHandles, BYTE SubId, BYTE Value[16], PKUNI_FW_MESSAGE* ppError);
+void KUNI_FW_ReadDevice(HID_HANDLES* pHandles, BYTE Device, KUNI_FW_DEVICE* pDevice);
+void KUNI_FW_PrintDevice(BYTE Device, const KUNI_FW_DEVICE* pDevice);
